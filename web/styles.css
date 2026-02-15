@@ -1,0 +1,180 @@
+:root {
+  --bg: #f4f3ee;
+  --surface: #ffffff;
+  --ink: #1d2a3a;
+  --accent: #005f73;
+  --danger: #b02a37;
+  --border: #d8dadd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: radial-gradient(circle at 10% 0%, #dff3f8, var(--bg));
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, #ffffff 0%, #eef4f7 100%);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.controls {
+  display: flex;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.controls label,
+.constraints label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  gap: 0.3rem;
+}
+
+select,
+input,
+button {
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid #b8c0c8;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+}
+
+.tab {
+  background: #d7e3ea;
+  color: #1e3447;
+}
+
+.tab.active {
+  background: #0a9396;
+  color: #fff;
+}
+
+main {
+  padding: 0 1.5rem 1.5rem;
+}
+
+.panel {
+  display: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.panel.active {
+  display: block;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.kpi-card {
+  background: #f8fbfd;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.kpi-card h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #38596f;
+}
+
+.kpi-card p {
+  margin: 0.3rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  padding: 0.5rem;
+  font-size: 0.92rem;
+}
+
+#mapView {
+  height: 500px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.constraints {
+  display: flex;
+  gap: 0.6rem;
+  align-items: end;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.export-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.neg {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.pos {
+  color: #0a7a40;
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    flex-direction: column;
+    align-items: start;
+    gap: 0.75rem;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+  }
+}

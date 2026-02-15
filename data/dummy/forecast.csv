@@ -1,0 +1,10 @@
+district_id,year,scenario_id,expected_students
+D1,2026,base,1200
+D1,2026,low,1100
+D1,2026,high,1300
+D2,2026,base,900
+D2,2026,low,820
+D2,2026,high,980
+D3,2026,base,1000
+D3,2026,low,920
+D3,2026,high,1080

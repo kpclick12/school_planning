@@ -1,0 +1,16 @@
+{
+  "name": "osm-tile-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cacache": "^19.0.1",
+    "express": "^4.19.2"
+  }
+}

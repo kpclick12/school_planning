@@ -1,0 +1,4 @@
+school_id,name,district_id,x_lon,y_lat,capacity_total,condition_score,status,opened_year,closed_year
+S1,Centrumsskolan,D1,11.96,57.71,450,4,active,1985,
+S2,Hisinge Skola,D2,11.92,57.73,380,3,active,1992,
+S3,Sydvaestskolan,D3,11.95,57.67,500,2,active,1978,
