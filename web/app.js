@@ -3,7 +3,14 @@ const state = {
   scenario: "base",
   forecastChart: null,
   map: null,
-  mapLoaded: false
+  mapLoaded: false,
+  demoStep: 0
+};
+
+const SCENARIO_LABELS = {
+  base: "Bas",
+  low: "Låg",
+  high: "Hög"
 };
 
 function qs(id) {
@@ -31,18 +38,73 @@ function currentQuery() {
   return params.toString();
 }
 
+function goToTab(tabName) {
+  document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+  const tabBtn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (tabBtn) {
+    tabBtn.classList.add("active");
+  }
+  const panel = qs(tabName);
+  if (panel) {
+    panel.classList.add("active");
+  }
+  if (tabName === "map" && state.map) {
+    setTimeout(() => state.map.resize(), 0);
+  }
+}
+
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      qs(btn.dataset.tab).classList.add("active");
-      if (btn.dataset.tab === "map" && state.map) {
-        setTimeout(() => state.map.resize(), 0);
-      }
+      goToTab(btn.dataset.tab);
     });
   });
+}
+
+function setupDemoGuide() {
+  const steps = [
+    {
+      tab: "overview",
+      title: "Steg 1: Nuläge och kapacitetsbalans",
+      text: "Visa hur många elever som förväntas i år och vilka distrikt som har störst underskott."
+    },
+    {
+      tab: "forecast",
+      title: "Steg 2: Prognos och scenarier",
+      text: "Jämför Bas, Låg och Hög för att visa osäkerhet och konsekvenser."
+    },
+    {
+      tab: "map",
+      title: "Steg 3: Geografisk påverkan",
+      text: "Peka ut var skolor och distrikt ligger för att förankra beslut i geografi."
+    },
+    {
+      tab: "planning",
+      title: "Steg 4: Proaktiva åtgärder",
+      text: "Gå igenom förslag med tilltro-badge och tydlig motivering."
+    },
+    {
+      tab: "export",
+      title: "Steg 5: Beslutsunderlag",
+      text: "Exportera samma underlag till Excel för beslut och dokumentation."
+    }
+  ];
+
+  function applyStep() {
+    const current = steps[state.demoStep];
+    qs("demoStepTitle").textContent = current.title;
+    qs("demoStepText").textContent = current.text;
+    goToTab(current.tab);
+    qs("demoNextBtn").textContent = state.demoStep === steps.length - 1 ? "Börja om demo" : "Nästa steg";
+  }
+
+  qs("demoNextBtn").addEventListener("click", () => {
+    state.demoStep = (state.demoStep + 1) % steps.length;
+    applyStep();
+  });
+
+  applyStep();
 }
 
 function setupFilters() {
@@ -103,41 +165,126 @@ async function refreshOverview() {
     `;
     tbody.appendChild(tr);
   });
+
+  const forecastRes = await api(`/api/forecast?scenario_id=${state.scenario}`);
+  const forecastRows = await forecastRes.json();
+  const totalByYear = {};
+  forecastRows.forEach((row) => {
+    totalByYear[row.year] = (totalByYear[row.year] || 0) + row.expected_students;
+  });
+  const now = totalByYear[2026] || 0;
+  const end = totalByYear[2036] || 0;
+  const delta = now === 0 ? 0 : (((end - now) / now) * 100);
+  qs("insightDemandChange").textContent = `${formatNum(end)} elever (${delta.toFixed(1)}% mot 2026)`;
+
+  const sortedByDeficit = [...districts].sort((a, b) => a.surplus_deficit - b.surplus_deficit);
+  const topRisk = sortedByDeficit[0];
+  qs("insightRiskDistrict").textContent = topRisk
+    ? `${topRisk.district_name} (${formatNum(topRisk.surplus_deficit)})`
+    : "Inga riskdistrikt";
+
+  if (topRisk && topRisk.surplus_deficit < 0) {
+    qs("insightAction").textContent = "Prioritera proaktiv kapacitetsökning i distrikt med underskott.";
+  } else {
+    qs("insightAction").textContent = "Nuvarande kapacitet räcker för valt år.";
+  }
+
+  const spotlightList = qs("spotlightList");
+  spotlightList.innerHTML = "";
+  sortedByDeficit.slice(0, 3).forEach((d) => {
+    const li = document.createElement("li");
+    li.textContent = `${d.district_name}: balans ${formatNum(d.surplus_deficit)} (kapacitet ${formatNum(d.capacity_total)} / efterfrågan ${formatNum(d.demand_total)})`;
+    spotlightList.appendChild(li);
+  });
 }
 
 async function refreshForecast() {
-  const res = await api(`/api/forecast?scenario_id=${state.scenario}`);
-  const rows = await res.json();
+  const [baseRes, lowRes, highRes] = await Promise.all([
+    api("/api/forecast?scenario_id=base"),
+    api("/api/forecast?scenario_id=low"),
+    api("/api/forecast?scenario_id=high")
+  ]);
+  const [baseRows, lowRows, highRows] = await Promise.all([baseRes.json(), lowRes.json(), highRes.json()]);
+  const scenarioRows = { base: baseRows, low: lowRows, high: highRows };
 
-  const totalsByYear = {};
-  rows.forEach((r) => {
-    totalsByYear[r.year] = (totalsByYear[r.year] || 0) + r.expected_students;
+  const totalsPerScenario = {};
+  Object.keys(scenarioRows).forEach((scenarioId) => {
+    const totals = {};
+    scenarioRows[scenarioId].forEach((r) => {
+      totals[r.year] = (totals[r.year] || 0) + r.expected_students;
+    });
+    totalsPerScenario[scenarioId] = totals;
   });
 
-  const labels = Object.keys(totalsByYear)
+  const labels = Object.keys(totalsPerScenario.base || {})
     .map((x) => Number(x))
     .sort((a, b) => a - b);
-  const data = labels.map((year) => totalsByYear[year]);
 
   if (state.forecastChart) {
     state.forecastChart.destroy();
   }
 
+  const configByScenario = {
+    base: { color: "#0b6bcb", bg: "rgba(11, 107, 203, 0.14)" },
+    low: { color: "#475569", bg: "rgba(71, 85, 105, 0.10)" },
+    high: { color: "#ea580c", bg: "rgba(234, 88, 12, 0.10)" }
+  };
+
   state.forecastChart = new Chart(qs("forecastChart"), {
     type: "line",
     data: {
       labels,
-      datasets: [
-        {
-          label: `Elevprognos (${state.scenario})`,
-          data,
-          fill: true,
-          borderColor: "#005f73",
-          backgroundColor: "rgba(0,95,115,0.15)",
-          tension: 0.2
+      datasets: ["base", "low", "high"].map((scenarioId) => {
+        const selected = scenarioId === state.scenario;
+        return {
+          label: `Elevprognos (${SCENARIO_LABELS[scenarioId]})`,
+          data: labels.map((year) => totalsPerScenario[scenarioId][year] || 0),
+          fill: selected,
+          borderColor: configByScenario[scenarioId].color,
+          backgroundColor: configByScenario[scenarioId].bg,
+          pointRadius: selected ? 3 : 2,
+          pointHoverRadius: 4,
+          borderWidth: selected ? 3 : 2,
+          borderDash: selected ? [] : [6, 4],
+          tension: 0.25
+        };
+      })
+    },
+    options: {
+      plugins: {
+        legend: {
+          labels: {
+            color: "#2a3d4f",
+            font: { family: "Newsreader, serif", size: 13 }
+          }
         }
-      ]
+      },
+      scales: {
+        x: {
+          ticks: { color: "#385061" },
+          grid: { color: "rgba(56,80,97,0.12)" }
+        },
+        y: {
+          ticks: { color: "#385061" },
+          grid: { color: "rgba(56,80,97,0.12)" }
+        }
+      }
     }
+  });
+
+  const compareBody = qs("forecastCompareBody");
+  compareBody.innerHTML = "";
+  ["base", "low", "high"].forEach((scenarioId) => {
+    const start = totalsPerScenario[scenarioId][2026] || 0;
+    const end = totalsPerScenario[scenarioId][2036] || 0;
+    const pct = start === 0 ? 0 : (((end - start) / start) * 100);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${SCENARIO_LABELS[scenarioId]}</td>
+      <td>${formatNum(end)}</td>
+      <td>${pct.toFixed(1)}%</td>
+    `;
+    compareBody.appendChild(tr);
   });
 }
 
@@ -296,10 +443,24 @@ async function refreshPlanning() {
   const tbody = qs("recsTable").querySelector("tbody");
   tbody.innerHTML = "";
 
+  function confidenceFor(rec) {
+    let score = 0;
+    const impact = Math.abs(rec.impact_students || 0);
+    if (impact >= 200) score += 2;
+    else if (impact >= 100) score += 1;
+    if (rec.action_type === "new_build" || rec.action_type === "resize") score += 1;
+    if ((rec.reason || "").toLowerCase().includes("underskott")) score += 1;
+    if (score >= 3) return { label: "Hög", className: "conf-high" };
+    if (score >= 2) return { label: "Medel", className: "conf-medium" };
+    return { label: "Låg", className: "conf-low" };
+  }
+
   recs.forEach((r) => {
+    const confidence = confidenceFor(r);
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${r.action_type}</td>
+      <td><span class="action-pill">${r.action_type}</span></td>
+      <td><span class="confidence-pill ${confidence.className}">${confidence.label}</span></td>
       <td>${r.district_name || "-"}</td>
       <td>${r.school_name || "-"}</td>
       <td>${formatNum(r.impact_students)}</td>
@@ -308,6 +469,13 @@ async function refreshPlanning() {
     `;
     tbody.appendChild(tr);
   });
+
+  const highConfidence = recs.filter((r) => confidenceFor(r).label === "Hög").length;
+  const proactive = recs.filter((r) => r.action_type === "new_build" || r.action_type === "resize").length;
+  const proactiveShare = recs.length ? ((proactive / recs.length) * 100).toFixed(0) : "0";
+  qs("recTotalCount").textContent = formatNum(recs.length);
+  qs("recHighConfidence").textContent = formatNum(highConfidence);
+  qs("recProactiveShare").textContent = `${proactiveShare}%`;
 }
 
 function setupConstraintsSave() {
@@ -342,6 +510,7 @@ async function refreshAll() {
 async function init() {
   setupTabs();
   setupFilters();
+  setupDemoGuide();
   setupConstraintsSave();
   setupExport();
 

@@ -207,7 +207,7 @@ def build_recommendations(year, scenario):
                         "district_id": district_id,
                         "school_id": school_id,
                         "action_type": "close",
-                        "reason": f"Lag belaggning ({util_pct:.1f}%) och svagt skick ({condition}).",
+                        "reason": f"Låg beläggning ({util_pct:.1f}%) och svagt skick ({condition}).",
                         "impact_students": int(enrolled),
                         "impact_capacity": -int(capacity),
                     }
@@ -231,7 +231,7 @@ def build_recommendations(year, scenario):
                                     "district_id": district_id,
                                     "school_id": a[0],
                                     "action_type": "merge",
-                                    "reason": f"Sammanslagning med {b[2]}: lag belaggning och avstand {distance:.2f} km.",
+                                    "reason": f"Sammanslagning med {b[2]}: låg beläggning och avstånd {distance:.2f} km.",
                                     "impact_students": int(a[7] + b[7]),
                                     "impact_capacity": -int(min(a[5], b[5]) // 2),
                                 }
