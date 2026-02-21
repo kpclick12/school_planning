@@ -297,19 +297,12 @@ function parseWktPolygon(wkt) {
 }
 
 async function refreshMap() {
-  const dRes = await api("/api/districts");
-  const districts = await dRes.json();
+  const dRes = await api(`/api/map/district-balance?${currentQuery()}`);
+  const districtData = await dRes.json();
   const sRes = await api(`/api/schools?year=${state.year}`);
   const schools = await sRes.json();
 
-  const districtFeatures = districts.map((d) => ({
-    type: "Feature",
-    properties: { district_id: d.district_id, name: d.name },
-    geometry: {
-      type: "Polygon",
-      coordinates: [parseWktPolygon(d.geom_wkt)]
-    }
-  }));
+  const districtFeatures = districtData.features || [];
 
   const schoolFeatures = schools.map((s) => ({
     type: "Feature",
@@ -326,24 +319,135 @@ async function refreshMap() {
   }));
 
   if (!state.map) {
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    const hasPmtiles = await fetch("/tiles/goteborg.pmtiles", { method: "HEAD" })
+      .then((res) => res.ok)
+      .catch(() => false);
+
+    const baseStyle = hasPmtiles
+      ? {
+          version: 8,
+          glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+          sources: {
+            goteborg: {
+              type: "vector",
+              url: "pmtiles:///tiles/goteborg.pmtiles"
+            }
+          },
+          layers: [
+            {
+              id: "green-areas",
+              source: "goteborg",
+              "source-layer": "green_areas",
+              type: "fill",
+              paint: { "fill-color": "#dbeed9", "fill-opacity": 0.85 }
+            },
+            {
+              id: "water-polygons",
+              source: "goteborg",
+              "source-layer": "water_polygons",
+              type: "fill",
+              paint: { "fill-color": "#c8e4ff", "fill-opacity": 0.95 }
+            },
+            {
+              id: "water-lines",
+              source: "goteborg",
+              "source-layer": "water_lines",
+              type: "line",
+              paint: { "line-color": "#8fbef3", "line-width": 1.2 }
+            },
+            {
+              id: "buildings",
+              source: "goteborg",
+              "source-layer": "buildings",
+              type: "fill",
+              paint: { "fill-color": "#ece6da", "fill-opacity": 0.72 }
+            },
+            {
+              id: "road-casing",
+              source: "goteborg",
+              "source-layer": "roads",
+              type: "line",
+              paint: {
+                "line-color": "#d4d9df",
+                "line-width": [
+                  "match",
+                  ["get", "highway"],
+                  "motorway",
+                  3.8,
+                  "trunk",
+                  3.4,
+                  "primary",
+                  3.0,
+                  "secondary",
+                  2.4,
+                  1.6
+                ]
+              }
+            },
+            {
+              id: "roads",
+              source: "goteborg",
+              "source-layer": "roads",
+              type: "line",
+              paint: {
+                "line-color": "#ffffff",
+                "line-width": [
+                  "match",
+                  ["get", "highway"],
+                  "motorway",
+                  2.8,
+                  "trunk",
+                  2.5,
+                  "primary",
+                  2.1,
+                  "secondary",
+                  1.6,
+                  1.1
+                ]
+              }
+            },
+            {
+              id: "road-labels",
+              source: "goteborg",
+              "source-layer": "roads",
+              type: "symbol",
+              minzoom: 12,
+              layout: {
+                "symbol-placement": "line",
+                "text-field": ["coalesce", ["get", "name"], ""],
+                "text-font": ["Noto Sans Regular"],
+                "text-size": 11
+              },
+              paint: {
+                "text-color": "#5e6d7b",
+                "text-halo-color": "#ffffff",
+                "text-halo-width": 1.1
+              }
+            }
+          ]
+        }
+      : {
+          version: 8,
+          sources: {
+            osm: {
+              type: "raster",
+              tiles: [
+                "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              ],
+              tileSize: 256,
+              attribution: "© OpenStreetMap contributors"
+            }
+          },
+          layers: [{ id: "osm", type: "raster", source: "osm" }]
+        };
+
     state.map = new maplibregl.Map({
       container: "mapView",
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: [
-              "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-              "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-              "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            ],
-            tileSize: 256,
-            attribution: "© OpenStreetMap contributors"
-          }
-        },
-        layers: [{ id: "osm", type: "raster", source: "osm" }]
-      },
+      style: baseStyle,
       center: [11.95, 57.71],
       zoom: 11
     });
@@ -360,8 +464,20 @@ async function refreshMap() {
         type: "fill",
         source: "districts",
         paint: {
-          "fill-color": "#0a9396",
-          "fill-opacity": 0.2
+          "fill-color": [
+            "step",
+            ["get", "surplus_deficit"],
+            "#fca5a5",
+            -150,
+            "#fecaca",
+            -50,
+            "#ffedd5",
+            0,
+            "#d1fae5",
+            80,
+            "#86efac"
+          ],
+          "fill-opacity": 0.46
         }
       });
 
@@ -370,8 +486,24 @@ async function refreshMap() {
         type: "line",
         source: "districts",
         paint: {
-          "line-color": "#005f73",
-          "line-width": 2
+          "line-color": "#0f3f67",
+          "line-width": 1.8
+        }
+      });
+
+      state.map.addLayer({
+        id: "district-label",
+        type: "symbol",
+        source: "districts",
+        layout: {
+          "text-field": ["get", "district_name"],
+          "text-size": 12,
+          "text-font": ["Noto Sans Regular"]
+        },
+        paint: {
+          "text-color": "#0f2940",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.2
         }
       });
 
@@ -385,10 +517,11 @@ async function refreshMap() {
         type: "circle",
         source: "schools",
         paint: {
-          "circle-radius": 6,
-          "circle-color": "#ca6702",
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fff"
+          "circle-radius": ["interpolate", ["linear"], ["get", "capacity"], 200, 4, 600, 8],
+          "circle-color": "#f59e0b",
+          "circle-opacity": 0.9,
+          "circle-stroke-width": 1.2,
+          "circle-stroke-color": "#ffffff"
         }
       });
 
@@ -398,6 +531,16 @@ async function refreshMap() {
           .setLngLat(e.lngLat)
           .setHTML(
             `<strong>${p.name}</strong><br/>Kapacitet: ${p.capacity}<br/>Byggnadsskick: ${p.condition_score}`
+          )
+          .addTo(state.map);
+      });
+
+      state.map.on("click", "district-fill", (e) => {
+        const p = e.features[0].properties;
+        new maplibregl.Popup()
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<strong>${p.district_name}</strong><br/>Kapacitet: ${p.capacity_total}<br/>Efterfrågan: ${p.demand_total}<br/>Balans: ${p.surplus_deficit}`
           )
           .addTo(state.map);
       });

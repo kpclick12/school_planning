@@ -6,3 +6,6 @@ __pycache__/
 node_modules/
 *.log
 .DS_Store
+map-data/raw/
+map-data/tiles/
+web/tiles/*.pmtiles

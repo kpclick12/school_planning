@@ -5,6 +5,7 @@ import json
 import math
 import os
 import posixpath
+import re
 from datetime import datetime
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +22,7 @@ except Exception as exc:
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = ROOT_DIR / "data" / "data.db"
 WEB_DIR = ROOT_DIR / "web"
+PMTILES_PATH = WEB_DIR / "tiles" / "goteborg.pmtiles"
 
 
 class ApiError(Exception):
@@ -73,6 +75,20 @@ def query_rows(sql, args=None):
 def query_json(sql, args=None):
     rows, columns = query_rows(sql, args)
     return [dict(zip(columns, row)) for row in rows]
+
+
+def parse_wkt_polygon(wkt):
+    if not wkt:
+        return []
+    cleaned = wkt.replace("POLYGON((", "").replace("))", "")
+    coords = []
+    for pair in cleaned.split(","):
+        lon_lat = pair.strip().split()
+        if len(lon_lat) != 2:
+            continue
+        lon, lat = float(lon_lat[0]), float(lon_lat[1])
+        coords.append([lon, lat])
+    return coords
 
 
 def fetch_constraints():
@@ -316,10 +332,90 @@ class DemoHandler(SimpleHTTPRequestHandler):
         except json.JSONDecodeError as exc:
             raise ApiError("Invalid JSON body") from exc
 
+    def _send_pmtiles(self):
+        if not PMTILES_PATH.exists():
+            self.send_error(404, "PMTiles file not found")
+            return
+
+        file_size = PMTILES_PATH.stat().st_size
+        start = 0
+        end = file_size - 1
+        status = 200
+
+        range_header = self.headers.get("Range")
+        if range_header:
+            match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if not match:
+                self.send_error(416, "Invalid range")
+                return
+            start = int(match.group(1))
+            if match.group(2):
+                end = int(match.group(2))
+            if start >= file_size or end >= file_size or start > end:
+                self.send_error(416, "Range not satisfiable")
+                return
+            status = 206
+
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Cache-Control", "public, max-age=3600")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
+        self.end_headers()
+
+        with PMTILES_PATH.open("rb") as f:
+            f.seek(start)
+            self.wfile.write(f.read(length))
+
+    def _district_balance_geojson(self, year, scenario):
+        rows = query_json(
+            """
+            SELECT
+              d.district_id,
+              d.name AS district_name,
+              d.geom_wkt,
+              dc.capacity_total,
+              dc.demand_total,
+              dc.surplus_deficit
+            FROM districts d
+            LEFT JOIN district_capacity dc
+              ON dc.district_id = d.district_id
+             AND dc.year = ?
+             AND dc.scenario_id = ?
+            ORDER BY d.district_id
+            """,
+            [year, scenario],
+        )
+        features = []
+        for row in rows:
+            polygon = parse_wkt_polygon(row["geom_wkt"])
+            if not polygon:
+                continue
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "district_id": row["district_id"],
+                        "district_name": row["district_name"],
+                        "capacity_total": row.get("capacity_total") or 0,
+                        "demand_total": row.get("demand_total") or 0,
+                        "surplus_deficit": row.get("surplus_deficit") or 0,
+                    },
+                    "geometry": {"type": "Polygon", "coordinates": [polygon]},
+                }
+            )
+        return {"type": "FeatureCollection", "features": features}
+
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
         params = parse_qs(parsed.query)
+
+        if path == "/tiles/goteborg.pmtiles":
+            return self._send_pmtiles()
 
         if not path.startswith("/api/"):
             return super().do_GET()
@@ -331,6 +427,11 @@ class DemoHandler(SimpleHTTPRequestHandler):
             if path == "/api/districts":
                 data = query_json("SELECT district_id, name, geom_wkt, area_km2 FROM districts ORDER BY district_id")
                 return self._send_json(data)
+
+            if path == "/api/map/district-balance":
+                year = as_int(params, "year", 2026)
+                scenario = as_text(params, "scenario_id", "base")
+                return self._send_json(self._district_balance_geojson(year, scenario))
 
             if path == "/api/schools":
                 district_id = as_text(params, "district_id")
@@ -481,6 +582,23 @@ class DemoHandler(SimpleHTTPRequestHandler):
                 return self._send_json({"error": str(exc)}, status=500)
 
         return self._send_json({"error": "Unknown endpoint"}, status=404)
+
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/tiles/goteborg.pmtiles":
+            if not PMTILES_PATH.exists():
+                self.send_error(404, "PMTiles file not found")
+                return
+            file_size = PMTILES_PATH.stat().st_size
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(file_size))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            return
+        return super().do_HEAD()
 
     def do_PATCH(self):
         parsed = urlparse(self.path)

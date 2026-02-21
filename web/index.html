@@ -115,6 +115,13 @@
           <p>Distriktsgränser och skolor ovanpå OpenStreetMap.</p>
         </div>
         <div id="mapView"></div>
+        <div class="map-legend">
+          <h3>Balanslegend</h3>
+          <p><span class="swatch swatch-critical"></span>Stort underskott</p>
+          <p><span class="swatch swatch-low"></span>Mindre underskott</p>
+          <p><span class="swatch swatch-neutral"></span>Nära balans</p>
+          <p><span class="swatch swatch-good"></span>Överskott</p>
+        </div>
       </section>
 
       <section id="planning" class="panel">
@@ -158,6 +165,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
